@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>360 WebAR Mumu Hunt</title>
+
+    <!-- A-Frame Library -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <!-- Look-at Component for Billboarding (Ghosts always face camera) -->
+    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #000;
+        }
+
+        /* Overlay UI */
+        #ui {
+            position: fixed;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            color: white;
+            z-index: 10;
+            text-shadow: 2px 2px 5px black;
+            pointer-events: none;
+        }
+
+        #message {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0 0 5px 0;
+        }
+
+        #score {
+            font-size: 18px;
+            margin: 0;
+        }
+
+        /* Start Screen Modal */
+        #start-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #start-btn {
+            margin-top: 20px;
+            padding: 15px 32px;
+            font-size: 20px;
+            font-weight: bold;
+            color: white;
+            background: #ff4757;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+        }
+
+        /* Webcam Background Stream */
+        #webcam {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: 0;
+        }
+
+        /* A-Frame Transparent Overlay Canvas */
+        a-scene {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Camera Background Feed -->
+    <video id="webcam" autoplay playsinline muted></video>
+
+    <!-- Top UI -->
+    <div id="ui">
+        <p id="message">👀 LOOK AROUND THE ROOM! 😱</p>
+        <p id="score">Mumu Found: 0 / 3</p>
+    </div>
+
+    <!-- Start Overlay (Handles iOS Motion & Camera Permission) -->
+    <div id="start-modal">
+        <h2>Mumu AR Room Hunt</h2>
+        <p>Rotate your phone 360° around your room to locate all hidden ghosts.</p>
+        <button id="start-btn" onclick="startGame()">START HUNT</button>
+    </div>
+
+    <!-- A-Frame 3D Scene -->
+    <a-scene 
+        embedded 
+        vr-mode-ui="enabled: false"
+        cursor="rayOrigin: mouse" 
+        raycaster="objects: .clickable">
+
+        <a-assets>
+            <img id="mumu" src="assets/mumu.png">
+        </a-assets>
+
+        <!-- Camera with Gyroscope Look Controls -->
+        <a-camera id="main-cam" look-controls="magicWindowTrackingEnabled: true"></a-camera>
+
+        <!-- Ghost Spawn Target Group -->
+        <a-entity id="ghost-container"></a-entity>
+
+    </a-scene>
+
+    <script>
+        let score = 0;
+        const totalGhosts = 3;
+
+        // Initialize Camera Stream
+        async function setupWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" }
+                });
+                const videoElement = document.getElementById("webcam");
+                videoElement.srcObject = stream;
+            } catch (err) {
+                alert("Camera access denied or unavailable. WebAR requires camera permissions.");
+                console.error(err);
+            }
+        }
+
+        // Start Game Handler
+        async function startGame() {
+            // Request Device Orientation Permission for iOS 13+
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission !== 'granted') {
+                        alert("Permission to access motion sensors was denied.");
+                        return;
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            // Start Webcam and Hide Modal
+            await setupWebcam();
+            document.getElementById("start-modal").style.display = "none";
+
+            // Spawn Ghosts in 360 Space
+            spawnGhosts();
+        }
+
+        // Spawn Ghosts in 3D Space Around Player
+        function spawnGhosts() {
+            const container = document.getElementById("ghost-container");
+
+            // X, Y, Z positions scattering ghosts across front, sides, and behind player
+            const positions = [
+                { x: 0, y: 0.5, z: -3 },   // Directly in front
+                { x: 3, y: 1.2, z: 0 },    // Right side
+                { x: -2.5, y: -0.5, z: 2 } // Behind and left
+            ];
+
+            positions.forEach((pos, index) => {
+                const ghost = document.createElement("a-image");
+
+                ghost.setAttribute("id", `ghost${index + 1}`);
+                ghost.setAttribute("class", "clickable");
+                ghost.setAttribute("src", "#mumu");
+                ghost.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+                ghost.setAttribute("width", "1.2");
+                ghost.setAttribute("height", "1.2");
+                ghost.setAttribute("look-at", "#main-cam"); // Keep image facing player camera
+
+                // Click / Tap Event
+                ghost.addEventListener("click", function () {
+                    if (this.getAttribute("visible") === "false") return;
+
+                    this.setAttribute("visible", "false");
+                    score++;
+
+                    document.getElementById("score").innerText = `Mumu Found: ${score} / ${totalGhosts}`;
+
+                    if (score === totalGhosts) {
+                        document.getElementById("message").innerText = "🎉 YOU CLEARED THE ROOM! 🎉";
+                    }
+                });
+
+                container.appendChild(ghost);
+            });
+        }
+    </script>
+</body>
+</html>
