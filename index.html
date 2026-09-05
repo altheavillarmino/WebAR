@@ -85,7 +85,7 @@
             z-index: 0;
         }
 
-        /* A-Frame Transparent Overlay Canvas */
+        /* A-Frame Canvas Overlay */
         a-scene {
             position: fixed;
             top: 0;
@@ -107,7 +107,7 @@
         <p id="score">Mumu Found: 0 / 3</p>
     </div>
 
-    <!-- Start Overlay (Handles iOS Motion & Camera Permission) -->
+    <!-- Start Overlay -->
     <div id="start-modal">
         <h2>Mumu AR Room Hunt</h2>
         <p>Rotate your phone 360° around your room to locate all hidden ghosts.</p>
@@ -121,14 +121,17 @@
         cursor="rayOrigin: mouse" 
         raycaster="objects: .clickable">
 
+        <!-- Unique Assets -->
         <a-assets>
-            <img id="mumu" src="assets/mumu.png">
+            <img id="mumu1" src="assets/mumu1.png">
+            <img id="mumu2" src="assets/mumu2.png">
+            <img id="mumu3" src="assets/mumu3.png">
         </a-assets>
 
-        <!-- Camera with Gyroscope Look Controls -->
+        <!-- Camera with Gyroscope Controls -->
         <a-camera id="main-cam" look-controls="magicWindowTrackingEnabled: true"></a-camera>
 
-        <!-- Ghost Spawn Target Group -->
+        <!-- Container for Ghosts -->
         <a-entity id="ghost-container"></a-entity>
 
     </a-scene>
@@ -137,7 +140,7 @@
         let score = 0;
         const totalGhosts = 3;
 
-        // Initialize Camera Stream
+        // Initialize Webcam
         async function setupWebcam() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -146,14 +149,13 @@
                 const videoElement = document.getElementById("webcam");
                 videoElement.srcObject = stream;
             } catch (err) {
-                alert("Camera access denied or unavailable. WebAR requires camera permissions.");
+                alert("Camera access denied or unavailable.");
                 console.error(err);
             }
         }
 
         // Start Game Handler
         async function startGame() {
-            // Request Device Orientation Permission for iOS 13+
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
                     const permission = await DeviceOrientationEvent.requestPermission();
@@ -166,37 +168,52 @@
                 }
             }
 
-            // Start Webcam and Hide Modal
             await setupWebcam();
             document.getElementById("start-modal").style.display = "none";
-
-            // Spawn Ghosts in 360 Space
             spawnGhosts();
         }
 
-        // Spawn Ghosts in 3D Space Around Player
+        // Spawn Ghosts
         function spawnGhosts() {
             const container = document.getElementById("ghost-container");
 
-            // X, Y, Z positions scattering ghosts across front, sides, and behind player
-            const positions = [
-                { x: 0, y: 0.5, z: -3 },   // Directly in front
-                { x: 3, y: 1.2, z: 0 },    // Right side
-                { x: -2.5, y: -0.5, z: 2 } // Behind and left
+            // Define custom positions, sizes, and distinct image targets
+            const ghostData = [
+                { 
+                    id: "ghost1", 
+                    asset: "#mumu1", 
+                    pos: "0 0.2 -1.2",  // JUMPSCARE GHOST: Placed close to camera (1.2m away)
+                    width: 2.2,         // Scaled larger for impact
+                    height: 2.2 
+                },
+                { 
+                    id: "ghost2", 
+                    asset: "#mumu2", 
+                    pos: "3.5 1.2 0",   // Far right
+                    width: 1.8, 
+                    height: 1.8 
+                },
+                { 
+                    id: "ghost3", 
+                    asset: "#mumu3", 
+                    pos: "-2.8 -0.3 2", // Behind and left
+                    width: 1.8, 
+                    height: 1.8 
+                }
             ];
 
-            positions.forEach((pos, index) => {
+            ghostData.forEach((data) => {
                 const ghost = document.createElement("a-image");
 
-                ghost.setAttribute("id", `ghost${index + 1}`);
+                ghost.setAttribute("id", data.id);
                 ghost.setAttribute("class", "clickable");
-                ghost.setAttribute("src", "#mumu");
-                ghost.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
-                ghost.setAttribute("width", "1.2");
-                ghost.setAttribute("height", "1.2");
-                ghost.setAttribute("look-at", "#main-cam"); // Keep image facing player camera
+                ghost.setAttribute("src", data.asset);
+                ghost.setAttribute("position", data.pos);
+                ghost.setAttribute("width", data.width);
+                ghost.setAttribute("height", data.height);
+                ghost.setAttribute("look-at", "#main-cam");
 
-                // Click / Tap Event
+                // Click Handler
                 ghost.addEventListener("click", function () {
                     if (this.getAttribute("visible") === "false") return;
 
