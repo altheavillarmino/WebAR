@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Mumu Room Hunt - Speedrun Mode</title>
+    <title>Mumu Room Hunt</title>
 
     <!-- A-Frame Library -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
@@ -157,6 +157,8 @@
             <img id="mumu1" src="assets/mumu1.png">
             <img id="mumu2" src="assets/mumu2.png">
             <img id="mumu3" src="assets/mumu3.png">
+            <!-- Dedicated Decoy Asset -->
+            <img id="decoy-asset" src="assets/decoy.png">
         </a-assets>
 
         <a-camera id="main-cam" look-controls="magicWindowTrackingEnabled: true"></a-camera>
@@ -177,7 +179,7 @@
         let penaltyTime = 0;
         let timerInterval = null;
 
-        // Base width for images
+        // Base width for images (Human-scale in AR)
         const GHOST_BASE_WIDTH = 3.8; 
 
         // Time ghost stays in one spot before vanishing/relocating (in ms)
@@ -336,15 +338,18 @@
                 decoyPos = getRandomPosition(2.0, 4.0);
             }
 
-            const dims = getImageDimensions("#mumu1", GHOST_BASE_WIDTH);
+            // Calculate auto-scaled dimensions for decoy.png
+            const dims = getImageDimensions("#decoy-asset", GHOST_BASE_WIDTH);
 
             const decoy = document.createElement("a-image");
             decoy.setAttribute("class", "clickable");
-            decoy.setAttribute("src", "#mumu1");
+            decoy.setAttribute("src", "#decoy-asset"); // Uses assets/decoy.png
             decoy.setAttribute("position", `${decoyPos.x} ${decoyPos.y} ${decoyPos.z}`);
             decoy.setAttribute("width", dims.width);
             decoy.setAttribute("height", dims.height);
             decoy.setAttribute("look-at", "#main-cam");
+            
+            // Reddish glow tint applied over decoy.png
             decoy.setAttribute("color", "#ff4757");
 
             decoy.addEventListener("click", function () {
