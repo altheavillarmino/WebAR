@@ -138,9 +138,9 @@
     <div id="start-modal">
         <h2 id="modal-title">Mumu Room Hunt</h2>
         <p id="modal-desc">
-            • Tap ghosts 3 times to capture.<br>
-            • They flee if you take too long!<br>
-            • Avoid clicking the RED DECOY ghost!
+            • Tap ghosts 3 times rapidly to capture!<br>
+            • They vanish & move every 3 SECONDS!<br>
+            • Avoid the RED DECOY (+5s Penalty)!
         </p>
         <input type="text" id="player-name-input" placeholder="Enter Your Name" maxlength="15">
         <button id="start-btn" onclick="startGame()">START HUNT</button>
@@ -167,14 +167,21 @@
 
     <script>
         let score = 0;
-        const totalGhosts = 3; // Updated to 3 ghosts
+        const totalGhosts = 3;
         let currentTapsLeft = 3;
         let fleeTimer = null;
         let currentGhostEl = null;
 
         let playerName = "Player";
         let startTime = 0;
+        let penaltyTime = 0;
         let timerInterval = null;
+
+        // Base width for images
+        const GHOST_BASE_WIDTH = 3.8; 
+
+        // Time ghost stays in one spot before vanishing/relocating (in ms)
+        const FLEE_INTERVAL_MS = 3000; 
 
         const ghostAssets = ["#mumu1", "#mumu2", "#mumu3"];
 
@@ -202,8 +209,10 @@
 
             // Start Stopwatch
             startTime = Date.now();
+            penaltyTime = 0;
+
             timerInterval = setInterval(() => {
-                const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+                const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000) + penaltyTime;
                 document.getElementById("timer").innerText = `⏱️ Time: ${elapsedSeconds}s`;
             }, 1000);
 
@@ -219,34 +228,52 @@
             return { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) };
         }
 
+        function getImageDimensions(assetId, targetWidth) {
+            const imgEl = document.querySelector(assetId);
+            const nativeWidth = imgEl.naturalWidth || 512;
+            const nativeHeight = imgEl.naturalHeight || 512;
+            const aspectRatio = nativeHeight / nativeWidth;
+            
+            return {
+                width: targetWidth,
+                height: targetWidth * aspectRatio
+            };
+        }
+
         function spawnNextRound() {
             const container = document.getElementById("ghost-container");
             container.innerHTML = "";
             if (fleeTimer) clearInterval(fleeTimer);
 
             currentTapsLeft = 3;
-            document.getElementById("message").innerText = `👻 Ghost #${score + 1} Sighted! Tap 3 Times!`;
-            document.getElementById("sub-message").innerText = "⚠️ It will run away if you wait!";
+            document.getElementById("message").innerText = `👻 Ghost #${score + 1} Sighted! Tap 3 Times FAST!`;
+            document.getElementById("sub-message").innerText = "⏱️ You have 3 seconds per spot!";
 
-            const realAsset = ghostAssets[score % ghostAssets.length]; // Cycles through mumu1, mumu2, mumu3
+            const realAsset = ghostAssets[score % ghostAssets.length];
             const pos = getRandomPosition(2.0, 4.0);
+
+            const dims = getImageDimensions(realAsset, GHOST_BASE_WIDTH);
 
             const ghost = document.createElement("a-image");
             ghost.setAttribute("class", "clickable");
             ghost.setAttribute("src", realAsset);
             ghost.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
-            ghost.setAttribute("width", "2.8");
-            ghost.setAttribute("height", "2.8");
+            ghost.setAttribute("width", dims.width);
+            ghost.setAttribute("height", dims.height);
             ghost.setAttribute("look-at", "#main-cam");
 
             ghost.addEventListener("click", function () {
                 currentTapsLeft--;
 
-                this.setAttribute("width", "2.2");
-                setTimeout(() => this.setAttribute("width", "2.8"), 100);
+                this.setAttribute("width", dims.width * 0.85);
+                this.setAttribute("height", dims.height * 0.85);
+                setTimeout(() => {
+                    this.setAttribute("width", dims.width);
+                    this.setAttribute("height", dims.height);
+                }, 100);
 
                 if (currentTapsLeft > 0) {
-                    document.getElementById("message").innerText = `💥 Hit! Tap ${currentTapsLeft} more times!`;
+                    document.getElementById("message").innerText = `💥 Hit! ${currentTapsLeft} more taps!`;
                 } else {
                     clearInterval(fleeTimer);
                     score++;
@@ -260,13 +287,12 @@
                     } else {
                         // WINNER END STATE
                         clearInterval(timerInterval);
-                        const finalTime = Math.floor((Date.now() - startTime) / 1000);
+                        const finalTime = Math.floor((Date.now() - startTime) / 1000) + penaltyTime;
 
                         container.innerHTML = "";
                         document.getElementById("message").innerText = "🎉 GAME COMPLETE! 🎉";
                         document.getElementById("sub-message").innerText = "";
 
-                        // Show victory modal
                         setTimeout(() => {
                             const modal = document.getElementById("start-modal");
                             document.getElementById("modal-title").innerText = `🏆 ${playerName}'s RESULT 🏆`;
@@ -287,16 +313,21 @@
                 spawnDecoy(container, pos);
             }
 
+            // FAST FLEE MECHANIC (3-second timer + tap count reset)
             fleeTimer = setInterval(() => {
                 if (currentGhostEl && currentTapsLeft > 0) {
                     const newPos = getRandomPosition(2.5, 4.5);
                     currentGhostEl.setAttribute("position", `${newPos.x} ${newPos.y} ${newPos.z}`);
-                    document.getElementById("sub-message").innerText = "💨 IT FLEW AWAY TO A NEW SPOT!";
+                    
+                    // Reset tap requirement if failed to tap 3 times in time
+                    currentTapsLeft = 3; 
+
+                    document.getElementById("sub-message").innerText = "💨 FLED! TAP HITS RESET! FIND IT AGAIN!";
                     setTimeout(() => {
-                        document.getElementById("sub-message").innerText = "⚠️ Catch it before it moves again!";
-                    }, 1500);
+                        document.getElementById("sub-message").innerText = "⏱️ You have 3 seconds!";
+                    }, 1200);
                 }
-            }, 6000);
+            }, FLEE_INTERVAL_MS);
         }
 
         function spawnDecoy(container, realGhostPos) {
@@ -305,17 +336,25 @@
                 decoyPos = getRandomPosition(2.0, 4.0);
             }
 
+            const dims = getImageDimensions("#mumu1", GHOST_BASE_WIDTH);
+
             const decoy = document.createElement("a-image");
             decoy.setAttribute("class", "clickable");
             decoy.setAttribute("src", "#mumu1");
             decoy.setAttribute("position", `${decoyPos.x} ${decoyPos.y} ${decoyPos.z}`);
-            decoy.setAttribute("width", "2.8");
-            decoy.setAttribute("height", "2.8");
+            decoy.setAttribute("width", dims.width);
+            decoy.setAttribute("height", dims.height);
             decoy.setAttribute("look-at", "#main-cam");
             decoy.setAttribute("color", "#ff4757");
 
             decoy.addEventListener("click", function () {
-                document.getElementById("sub-message").innerText = "❌ TRICKED! That was a RED DECOY!";
+                penaltyTime += 5;
+
+                const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000) + penaltyTime;
+                document.getElementById("timer").innerText = `⏱️ Time: ${elapsedSeconds}s`;
+
+                document.getElementById("sub-message").innerText = "❌ DECOY! +5 SECONDS PENALTY! 🚨";
+
                 const newDecoyPos = getRandomPosition(2.0, 4.0);
                 this.setAttribute("position", `${newDecoyPos.x} ${newDecoyPos.y} ${newDecoyPos.z}`);
             });
