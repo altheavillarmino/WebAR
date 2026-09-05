@@ -185,6 +185,9 @@
         // Time ghost stays in one spot before vanishing/relocating (in ms)
         const FLEE_INTERVAL_MS = 3000; 
 
+        // Minimum required 3D distance between real ghost and decoy (in meters)
+        const MIN_SEPARATION = 2.5; 
+
         const ghostAssets = ["#mumu1", "#mumu2", "#mumu3"];
 
         async function setupWebcam() {
@@ -221,6 +224,7 @@
             spawnNextRound();
         }
 
+        // Helper: Generate random coordinates around player
         function getRandomPosition(minDist = 2.0, maxDist = 4.0) {
             const angle = Math.random() * Math.PI * 2;
             const distance = Math.random() * (maxDist - minDist) + minDist;
@@ -230,6 +234,15 @@
             return { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) };
         }
 
+        // Helper: Calculate 3D Euclidean distance between two points
+        function getDistance3D(p1, p2) {
+            const dx = parseFloat(p1.x) - parseFloat(p2.x);
+            const dy = parseFloat(p1.y) - parseFloat(p2.y);
+            const dz = parseFloat(p1.z) - parseFloat(p2.z);
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        // Helper: Get native PNG dimensions to preserve original aspect ratio
         function getImageDimensions(assetId, targetWidth) {
             const imgEl = document.querySelector(assetId);
             const nativeWidth = imgEl.naturalWidth || 512;
@@ -311,6 +324,7 @@
             container.appendChild(ghost);
             currentGhostEl = ghost;
 
+            // 50% Chance to spawn a decoy with distance validation
             if (Math.random() > 0.5) {
                 spawnDecoy(container, pos);
             }
@@ -334,8 +348,12 @@
 
         function spawnDecoy(container, realGhostPos) {
             let decoyPos = getRandomPosition(2.0, 4.0);
-            while (Math.abs(decoyPos.x - realGhostPos.x) < 1.5) {
+            let attempts = 0;
+
+            // Ensure decoy doesn't spawn within 2.5m 3D radius of real ghost
+            while (getDistance3D(decoyPos, realGhostPos) < MIN_SEPARATION && attempts < 100) {
                 decoyPos = getRandomPosition(2.0, 4.0);
+                attempts++;
             }
 
             // Calculate auto-scaled dimensions for decoy.png
@@ -343,13 +361,13 @@
 
             const decoy = document.createElement("a-image");
             decoy.setAttribute("class", "clickable");
-            decoy.setAttribute("src", "#decoy-asset"); // Uses assets/decoy.png
+            decoy.setAttribute("src", "#decoy-asset");
             decoy.setAttribute("position", `${decoyPos.x} ${decoyPos.y} ${decoyPos.z}`);
             decoy.setAttribute("width", dims.width);
             decoy.setAttribute("height", dims.height);
             decoy.setAttribute("look-at", "#main-cam");
             
-            // Reddish glow tint applied over decoy.png
+            // Reddish glow tint over decoy.png
             decoy.setAttribute("color", "#ff4757");
 
             decoy.addEventListener("click", function () {
@@ -360,7 +378,16 @@
 
                 document.getElementById("sub-message").innerText = "❌ DECOY! +5 SECONDS PENALTY! 🚨";
 
-                const newDecoyPos = getRandomPosition(2.0, 4.0);
+                // Relocate decoy safely without overlapping current real ghost
+                let newDecoyPos = getRandomPosition(2.0, 4.0);
+                let relocAttempts = 0;
+                const currentRealPos = currentGhostEl.getAttribute("position");
+
+                while (getDistance3D(newDecoyPos, currentRealPos) < MIN_SEPARATION && relocAttempts < 100) {
+                    newDecoyPos = getRandomPosition(2.0, 4.0);
+                    relocAttempts++;
+                }
+
                 this.setAttribute("position", `${newDecoyPos.x} ${newDecoyPos.y} ${newDecoyPos.z}`);
             });
 
