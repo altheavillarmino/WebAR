@@ -139,6 +139,36 @@
     <script>
         let score = 0;
         const totalGhosts = 3;
+        const spawnedPositions = []; // Tracks spawned coordinates to prevent overlaps
+        const MIN_GHOST_DISTANCE = 2.0; // Minimum distance (meters) between ghosts
+
+        // Register custom A-Frame component to dynamically scale ghosts based on proximity to camera
+        AFRAME.registerComponent('dynamic-scale', {
+            init: function () {
+                this.cameraEl = document.querySelector('#main-cam');
+                this.maxSize = 2.8; // Human size scale when close
+                this.minSize = 1.0; // Distant size scale
+                this.closeDist = 1.5; // Distance (m) where ghost reaches max size
+                this.farDist = 5.0;  // Distance (m) where ghost stays min size
+            },
+            tick: function () {
+                if (!this.el.getAttribute('visible')) return;
+
+                const ghostPos = this.el.object3D.position;
+                const camPos = this.cameraEl.object3D.position;
+
+                // Calculate Euclidean distance between camera and ghost
+                const distance = ghostPos.distanceTo(camPos);
+
+                // Interpolate scale ratio based on distance
+                let factor = (this.farDist - distance) / (this.farDist - this.closeDist);
+                factor = Math.max(0, Math.min(1, factor)); // Clamp between 0 and 1
+
+                const currentSize = this.minSize + factor * (this.maxSize - this.minSize);
+                this.el.setAttribute('width', currentSize);
+                this.el.setAttribute('height', currentSize);
+            }
+        });
 
         // Initialize Webcam
         async function setupWebcam() {
@@ -173,40 +203,58 @@
             spawnGhostsRandomly();
         }
 
-        // Random Spawner Function
+        // Calculate Euclidean distance between 3D points
+        function getDistance3D(p1, p2) {
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            const dz = p1.z - p2.z;
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        // Random Spawner Function with Anti-Overlap Logic
         function spawnGhostsRandomly() {
             const container = document.getElementById("ghost-container");
             const assets = ["#mumu1", "#mumu2", "#mumu3"];
 
-            // HUMAN SCALE SIZE (2.8m x 2.8m)
-            const ghostWidth = 2.8; 
-            const ghostHeight = 2.8;
-
             assets.forEach((asset, index) => {
+                let positionFound = false;
+                let candidatePos = { x: 0, y: 0, z: 0 };
+                let attempts = 0;
+
+                // Loop until candidate position satisfies minimum distance separation from other ghosts
+                while (!positionFound && attempts < 100) {
+                    attempts++;
+                    const angle = Math.random() * Math.PI * 2;
+
+                    // Vary distances: Index 0 is close (jumpscare), others are further away
+                    const distance = (index === 0) 
+                        ? (Math.random() * 0.5 + 1.5)  // 1.5m - 2.0m away
+                        : (Math.random() * 2.5 + 2.5); // 2.5m - 5.0m away
+
+                    const x = Math.cos(angle) * distance;
+                    const z = Math.sin(angle) * distance;
+                    const y = (Math.random() * 1.0) - 0.2; // Eye level (-0.2m to +0.8m)
+
+                    candidatePos = { x, y, z };
+
+                    // Check distance against all previously placed ghosts
+                    const tooClose = spawnedPositions.some(pos => getDistance3D(pos, candidatePos) < MIN_GHOST_DISTANCE);
+
+                    if (!tooClose || spawnedPositions.length === 0) {
+                        positionFound = true;
+                        spawnedPositions.push(candidatePos);
+                    }
+                }
+
                 const ghost = document.createElement("a-image");
-
-                // Generate random angle in radians (0 to 360 degrees)
-                const angle = Math.random() * Math.PI * 2;
-
-                // Set random distance: 1 ghost spawns close (1.5m to 2.2m away), others further (2.5m to 4m away)
-                const distance = (index === 0) 
-                    ? (Math.random() * 0.7 + 1.5)  // Jumpscare/Close ghost
-                    : (Math.random() * 1.5 + 2.5); // Outer ghosts
-
-                // Calculate X and Z positions using trigonometry
-                const x = Math.cos(angle) * distance;
-                const z = Math.sin(angle) * distance;
-
-                // Random Y height around eye level (-0.3m to +0.8m offset)
-                const y = (Math.random() * 1.1) - 0.3;
-
                 ghost.setAttribute("id", `ghost${index + 1}`);
                 ghost.setAttribute("class", "clickable");
                 ghost.setAttribute("src", asset);
-                ghost.setAttribute("position", `${x.toFixed(2)} ${y.toFixed(2)} ${z.toFixed(2)}`);
-                ghost.setAttribute("width", ghostWidth);
-                ghost.setAttribute("height", ghostHeight);
+                ghost.setAttribute("position", `${candidatePos.x.toFixed(2)} ${candidatePos.y.toFixed(2)} ${candidatePos.z.toFixed(2)}`);
                 ghost.setAttribute("look-at", "#main-cam");
+
+                // Attach dynamic proximity scaling component
+                ghost.setAttribute("dynamic-scale", "");
 
                 // Click / Tap Handler
                 ghost.addEventListener("click", function () {
