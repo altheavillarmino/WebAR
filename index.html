@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Mumu Hunt</title>
+    <title>Mumu Room Hunt - Challenge Mode</title>
 
     <!-- A-Frame Library -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
@@ -32,9 +32,16 @@
         }
 
         #message {
-            font-size: 24px;
+            font-size: 22px;
             font-weight: bold;
             margin: 0 0 5px 0;
+        }
+
+        #sub-message {
+            font-size: 16px;
+            color: #ff4757;
+            margin: 0 0 5px 0;
+            font-weight: bold;
         }
 
         #score {
@@ -103,14 +110,17 @@
 
     <!-- Top UI -->
     <div id="ui">
-        <p id="message">👀 LOOK AROUND THE ROOM! 😱</p>
-        <p id="score">Mumu Found: 0 / 3</p>
+        <p id="message">SEARCH THE ROOM!</p>
+        <p id="sub-message">⚠️ BEWARE OF DECOYS!</p>
+        <p id="score">Ghosts Captured: 0 / 5</p>
     </div>
 
     <!-- Start Overlay -->
     <div id="start-modal">
         <h2>Mumu Room Hunt</h2>
-        <p>Rotate your phone 360° around your room to locate all hidden ghosts.</p>
+        <p>• Ghosts require 3 taps to capture.<br>
+           • They run away if you take too long!<br>
+           • Avoid clicking the RED DECOY ghost!</p>
         <button id="start-btn" onclick="startGame()">START HUNT</button>
     </div>
 
@@ -121,7 +131,7 @@
         cursor="rayOrigin: mouse" 
         raycaster="objects: .clickable">
 
-        <!-- Unique Assets -->
+        <!-- Reusing existing uploaded images -->
         <a-assets>
             <img id="mumu1" src="assets/mumu1.png">
             <img id="mumu2" src="assets/mumu2.png">
@@ -131,56 +141,29 @@
         <!-- Camera with Gyroscope Controls -->
         <a-camera id="main-cam" look-controls="magicWindowTrackingEnabled: true"></a-camera>
 
-        <!-- Container for Ghosts -->
+        <!-- Container for Spawning Entities -->
         <a-entity id="ghost-container"></a-entity>
 
     </a-scene>
 
     <script>
         let score = 0;
-        const totalGhosts = 3;
-        const spawnedPositions = []; // Tracks spawned coordinates to prevent overlaps
-        const MIN_GHOST_DISTANCE = 2.0; // Minimum distance (meters) between ghosts
+        const totalGhosts = 5;
+        let currentTapsLeft = 3;
+        let fleeTimer = null;
+        let currentGhostEl = null;
 
-        // Register custom A-Frame component to dynamically scale ghosts based on proximity to camera
-        AFRAME.registerComponent('dynamic-scale', {
-            init: function () {
-                this.cameraEl = document.querySelector('#main-cam');
-                this.maxSize = 2.8; // Human size scale when close
-                this.minSize = 1.0; // Distant size scale
-                this.closeDist = 1.5; // Distance (m) where ghost reaches max size
-                this.farDist = 5.0;  // Distance (m) where ghost stays min size
-            },
-            tick: function () {
-                if (!this.el.getAttribute('visible')) return;
+        const ghostAssets = ["#mumu1", "#mumu2", "#mumu3"];
 
-                const ghostPos = this.el.object3D.position;
-                const camPos = this.cameraEl.object3D.position;
-
-                // Calculate Euclidean distance between camera and ghost
-                const distance = ghostPos.distanceTo(camPos);
-
-                // Interpolate scale ratio based on distance
-                let factor = (this.farDist - distance) / (this.farDist - this.closeDist);
-                factor = Math.max(0, Math.min(1, factor)); // Clamp between 0 and 1
-
-                const currentSize = this.minSize + factor * (this.maxSize - this.minSize);
-                this.el.setAttribute('width', currentSize);
-                this.el.setAttribute('height', currentSize);
-            }
-        });
-
-        // Initialize Webcam
+        // Setup Webcam Stream
         async function setupWebcam() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: "environment" }
                 });
-                const videoElement = document.getElementById("webcam");
-                videoElement.srcObject = stream;
+                document.getElementById("webcam").srcObject = stream;
             } catch (err) {
-                alert("Camera access denied or unavailable.");
-                console.error(err);
+                alert("Camera access denied.");
             }
         }
 
@@ -188,11 +171,7 @@
         async function startGame() {
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
-                    const permission = await DeviceOrientationEvent.requestPermission();
-                    if (permission !== 'granted') {
-                        alert("Permission to access motion sensors was denied.");
-                        return;
-                    }
+                    await DeviceOrientationEvent.requestPermission();
                 } catch (e) {
                     console.error(e);
                 }
@@ -200,78 +179,121 @@
 
             await setupWebcam();
             document.getElementById("start-modal").style.display = "none";
-            spawnGhostsRandomly();
+            spawnNextRound();
         }
 
-        // Calculate Euclidean distance between 3D points
-        function getDistance3D(p1, p2) {
-            const dx = p1.x - p2.x;
-            const dy = p1.y - p2.y;
-            const dz = p1.z - p2.z;
-            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        // Helper: Generate random coordinates around player
+        function getRandomPosition(minDist = 2.0, maxDist = 4.0) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * (maxDist - minDist) + minDist;
+            const x = Math.cos(angle) * distance;
+            const z = Math.sin(angle) * distance;
+            const y = (Math.random() * 1.0) - 0.2;
+            return { x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2) };
         }
 
-        // Random Spawner Function with Anti-Overlap Logic
-        function spawnGhostsRandomly() {
+        // Sequential Spawn Controller
+        function spawnNextRound() {
             const container = document.getElementById("ghost-container");
-            const assets = ["#mumu1", "#mumu2", "#mumu3"];
+            container.innerHTML = ""; // Clear existing elements
+            if (fleeTimer) clearInterval(fleeTimer);
 
-            assets.forEach((asset, index) => {
-                let positionFound = false;
-                let candidatePos = { x: 0, y: 0, z: 0 };
-                let attempts = 0;
+            currentTapsLeft = 3;
+            document.getElementById("message").innerText = `👻 Ghost #${score + 1} Sighted! Tap 3 Times!`;
+            document.getElementById("sub-message").innerText = "⚠️ It will run away if you wait!";
 
-                // Loop until candidate position satisfies minimum distance separation from other ghosts
-                while (!positionFound && attempts < 100) {
-                    attempts++;
-                    const angle = Math.random() * Math.PI * 2;
+            // 1. SPAWN TARGET GHOST
+            const realAsset = ghostAssets[Math.floor(Math.random() * ghostAssets.length)];
+            const pos = getRandomPosition(2.0, 4.0);
 
-                    // Vary distances: Index 0 is close (jumpscare), others are further away
-                    const distance = (index === 0) 
-                        ? (Math.random() * 0.5 + 1.5)  // 1.5m - 2.0m away
-                        : (Math.random() * 2.5 + 2.5); // 2.5m - 5.0m away
+            const ghost = document.createElement("a-image");
+            ghost.setAttribute("class", "clickable");
+            ghost.setAttribute("src", realAsset);
+            ghost.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+            ghost.setAttribute("width", "2.8");
+            ghost.setAttribute("height", "2.8");
+            ghost.setAttribute("look-at", "#main-cam");
 
-                    const x = Math.cos(angle) * distance;
-                    const z = Math.sin(angle) * distance;
-                    const y = (Math.random() * 1.0) - 0.2; // Eye level (-0.2m to +0.8m)
+            // Multi-Tap Click Event
+            ghost.addEventListener("click", function () {
+                currentTapsLeft--;
 
-                    candidatePos = { x, y, z };
+                // Visual tap bounce effect
+                this.setAttribute("width", "2.2");
+                setTimeout(() => this.setAttribute("width", "2.8"), 100);
 
-                    // Check distance against all previously placed ghosts
-                    const tooClose = spawnedPositions.some(pos => getDistance3D(pos, candidatePos) < MIN_GHOST_DISTANCE);
+                if (currentTapsLeft > 0) {
+                    document.getElementById("message").innerText = `💥 Hit! Tap ${currentTapsLeft} more times!`;
+                } else {
+                    // Captured!
+                    clearInterval(fleeTimer);
+                    score++;
+                    document.getElementById("score").innerText = `Ghosts Captured: ${score} / ${totalGhosts}`;
 
-                    if (!tooClose || spawnedPositions.length === 0) {
-                        positionFound = true;
-                        spawnedPositions.push(candidatePos);
+                    if (score < totalGhosts) {
+                        document.getElementById("message").innerText = "🎉 Captured! Spawning Next...";
+                        document.getElementById("sub-message").innerText = "";
+                        container.innerHTML = "";
+                        setTimeout(spawnNextRound, 1500);
+                    } else {
+                        document.getElementById("message").innerText = "🎉 YOU CLEARED THE HUNT! 🎉";
+                        document.getElementById("sub-message").innerText = "All Mumus caught!";
+                        container.innerHTML = "";
                     }
                 }
-
-                const ghost = document.createElement("a-image");
-                ghost.setAttribute("id", `ghost${index + 1}`);
-                ghost.setAttribute("class", "clickable");
-                ghost.setAttribute("src", asset);
-                ghost.setAttribute("position", `${candidatePos.x.toFixed(2)} ${candidatePos.y.toFixed(2)} ${candidatePos.z.toFixed(2)}`);
-                ghost.setAttribute("look-at", "#main-cam");
-
-                // Attach dynamic proximity scaling component
-                ghost.setAttribute("dynamic-scale", "");
-
-                // Click / Tap Handler
-                ghost.addEventListener("click", function () {
-                    if (this.getAttribute("visible") === "false") return;
-
-                    this.setAttribute("visible", "false");
-                    score++;
-
-                    document.getElementById("score").innerText = `Mumu Found: ${score} / ${totalGhosts}`;
-
-                    if (score === totalGhosts) {
-                        document.getElementById("message").innerText = "🎉 YOU CLEARED THE ROOM! 🎉";
-                    }
-                });
-
-                container.appendChild(ghost);
             });
+
+            container.appendChild(ghost);
+            currentGhostEl = ghost;
+
+            // 2. SPAWN DECOY GHOST (Reuses #mumu1 with a red tint, 50% chance each round)
+            if (Math.random() > 0.5) {
+                spawnDecoy(container, pos);
+            }
+
+            // 3. RUN AWAY / FLEE MECHANIC (Relocates every 6 seconds if not caught)
+            fleeTimer = setInterval(() => {
+                if (currentGhostEl && currentTapsLeft > 0) {
+                    const newPos = getRandomPosition(2.5, 4.5);
+                    currentGhostEl.setAttribute("position", `${newPos.x} ${newPos.y} ${newPos.z}`);
+                    document.getElementById("sub-message").innerText = "💨 IT FLEW AWAY TO A NEW SPOT!";
+                    setTimeout(() => {
+                        document.getElementById("sub-message").innerText = "⚠️ Catch it before it moves again!";
+                    }, 1500);
+                }
+            }, 6000);
+        }
+
+        // Decoy Spawner using existing image asset + color tint
+        function spawnDecoy(container, realGhostPos) {
+            let decoyPos = getRandomPosition(2.0, 4.0);
+            
+            // Ensure decoy doesn't spawn right on top of real ghost
+            while (Math.abs(decoyPos.x - realGhostPos.x) < 1.5) {
+                decoyPos = getRandomPosition(2.0, 4.0);
+            }
+
+            const decoy = document.createElement("a-image");
+            decoy.setAttribute("class", "clickable");
+            decoy.setAttribute("src", "#mumu1"); // Reuses mumu1.png
+            decoy.setAttribute("position", `${decoyPos.x} ${decoyPos.y} ${decoyPos.z}`);
+            decoy.setAttribute("width", "2.8");
+            decoy.setAttribute("height", "2.8");
+            decoy.setAttribute("look-at", "#main-cam");
+
+            // Reddish tint applied via code to signal it's a fake clone
+            decoy.setAttribute("color", "#ff4757");
+
+            // Decoy Penalty Click
+            decoy.addEventListener("click", function () {
+                document.getElementById("sub-message").innerText = "❌ TRICKED! That was a RED DECOY!";
+                
+                // Relocate decoy on click
+                const newDecoyPos = getRandomPosition(2.0, 4.0);
+                this.setAttribute("position", `${newDecoyPos.x} ${newDecoyPos.y} ${newDecoyPos.z}`);
+            });
+
+            container.appendChild(decoy);
         }
     </script>
 </body>
