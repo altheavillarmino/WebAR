@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Mumu Room Hunt</title>
+    <title>🎮 Mumu Room Hunt 💀</title>
 
     <!-- A-Frame Library -->
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
@@ -136,7 +136,7 @@
 
     <!-- Start / End Overlay -->
     <div id="start-modal">
-        <h2 id="modal-title">Mumu Room Hunt</h2>
+        <h2 id="modal-title"> Mumu Room Hunt </h2>
         <p id="modal-desc">
             • Tap ghosts 3 times rapidly to capture!<br>
             • They vanish & move every 3 SECONDS!<br>
@@ -261,7 +261,7 @@
             if (fleeTimer) clearInterval(fleeTimer);
 
             currentTapsLeft = 3;
-            document.getElementById("message").innerText = `👻 Ghost #${score + 1} Sighted! Tap 3 Times FAST!`;
+            document.getElementById("message").innerText = `💀 Ghost #${score + 1} Sighted! Tap 3 Times FAST!`;
             document.getElementById("sub-message").innerText = "⏱️ You have 3 seconds per spot!";
 
             const realAsset = ghostAssets[score % ghostAssets.length];
@@ -305,7 +305,7 @@
                         const finalTime = Math.floor((Date.now() - startTime) / 1000) + penaltyTime;
 
                         container.innerHTML = "";
-                        document.getElementById("message").innerText = "🎉 GAME COMPLETE! 🎉";
+                        document.getElementById("message").innerText = "👾 GAME OVER! 😎";
                         document.getElementById("sub-message").innerText = "";
 
                         setTimeout(() => {
@@ -338,7 +338,7 @@
                     // Reset tap requirement if failed to tap 3 times in time
                     currentTapsLeft = 3; 
 
-                    document.getElementById("sub-message").innerText = "💨 FLED! TAP HITS RESET! FIND IT AGAIN!";
+                    document.getElementById("sub-message").innerText = "💨 MUMU GONE! FIND IT AGAIN!";
                     setTimeout(() => {
                         document.getElementById("sub-message").innerText = "⏱️ You have 3 seconds!";
                     }, 1200);
